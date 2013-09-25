@@ -24,6 +24,8 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceHolder.Callback;
 import android.view.SurfaceView;
 import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.SeekBar;
 
 public class CameraVideo extends Activity {
@@ -32,6 +34,14 @@ public class CameraVideo extends Activity {
 	private Camera camera;
 	private boolean preview = false;
 	private SeekBar mSeekBar;
+	
+	//--------------------------------
+	EditText editTextCaptureNum=(EditText) findViewById(R.id.editTextCaptureNum);
+	EditText editTextInterval=(EditText) findViewById(R.id.editTextInterval);
+	EditText editTextProjName=(EditText) findViewById(R.id.editTextProjName);
+	EditText editTextDescription=(EditText) findViewById(R.id.editTextDescription);
+	Button buttonCapture=(Button) findViewById(R.id.buttonCapture);
+	//---------------------
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
