@@ -1,3 +1,4 @@
+//http://blog.csdn.net/fuuckwtu/article/details/7070205
 package com.example.cameravideo;
 
 import java.io.File;
@@ -11,6 +12,7 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
+import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
@@ -82,9 +84,10 @@ public class CameraVideo extends Activity {
 					@Override
 					public void onAutoFocus(boolean success, Camera camera) {
 						// TODO Auto-generated method stub
+						if(success)
+							camera.takePicture(null, null, new JpegPictureCallback());
 					}
 				});
-				camera.takePicture(null, null, new JpegPictureCallback());
 				
 			}
 
@@ -98,10 +101,7 @@ public class CameraVideo extends Activity {
 		@Override
 		public void surfaceCreated(SurfaceHolder holder) {
 			Log.d(TAG, "surfaceCreated");
-			/*
-			 * 在SurfaceView创建好之后 打开摄像头 注意是 android.hardware.Camera
-			 */
-			
+			// 在SurfaceView创建好之后 打开摄像头 注意是 android.hardware.Camera
 			camera = Camera.open();
 			camera.setDisplayOrientation(90);
 
@@ -218,40 +218,24 @@ class JpegPictureCallback implements PictureCallback {
 
     @Override
     public void onPictureTaken( byte[] data, Camera camera ) {
-
-        Bitmap bitmap = null;
-        try {
-            bitmap = BitmapFactory.decodeByteArray( data, 0, data.length );
-            System.out.println("data.length: "+data.length);
-        }
-        catch (OutOfMemoryError e) {
-            Log.e( "CameraFragment", "Out of memory decoding image from camera.", e );
-            return;
-        }
-        data = null;
-
-        if ( bitmap != null ) {
-//            new SavePictureWorker( getActivity() ).execute( bitmap );
-        	
-        	String fname="shit.jpg";
-        	File path=Environment.getExternalStorageDirectory();
-        	File file=new File(path, fname);
-        	FileOutputStream fout;
-			try {
-				fout = new FileOutputStream(file);
-//				bitmap.compress(Bitmap.CompressFormat.JPEG, 50, fout);
-////				fout.flush();
-				fout.close();
-			} catch (FileNotFoundException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-//			MediaStore.Images.Media.insertImage(getContentResolver(),file.getAbsolutePath(),file.getName(),file.getName());
-			System.out.println("file: "+file.getAbsolutePath()+"; "+file.getPath());
-			
-        }
-
+    	String fname="shit.jpg";
+    	File path=Environment.getExternalStorageDirectory();
+    	File file=new File(path, fname);
+    	FileOutputStream fout;
+		try {
+			fout = new FileOutputStream(file);
+			fout.write(data);
+//			Bitmap bm=BitmapFactory.decodeByteArray(data, 0, data.length);
+//			Matrix mat=new Matrix();
+//			mat.setRotate(90);
+//			bm=Bitmap.createBitmap(bm, 0, 0, bm.getWidth(), bm.getHeight(), mat, true);
+//			bm.compress(Bitmap.CompressFormat.JPEG, 50, fout);
+			fout.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
         camera.startPreview();
     }
 }
