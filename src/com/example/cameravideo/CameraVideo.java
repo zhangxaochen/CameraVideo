@@ -5,24 +5,31 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.util.List;
 
+import org.simpleframework.xml.core.Persister;
+import org.simpleframework.xml.stream.Format;
+
+import com.example.mysensorlistener.Consts;
+import com.example.mysensorlistener.MySensorListener;
+import com.zhangxaochen.xmlParser.NewSessionNode;
+import com.zhangxaochen.xmlParser.XmlRootNode;
+
 import android.app.Activity;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
-import android.graphics.Matrix;
 import android.hardware.Camera;
+import android.hardware.SensorManager;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
 import android.os.Bundle;
+import android.os.CountDownTimer;
 import android.os.Environment;
-import android.provider.MediaStore;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceHolder.Callback;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.View.OnClickListener;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -33,20 +40,115 @@ public class CameraVideo extends Activity {
 	private static final String TAG = "CameravedioActivity";
 	private Camera camera;
 	private boolean preview = false;
+
+	// --------------------------------UI
 	private SeekBar mSeekBar;
+	EditText editTextCaptureNum;
+	EditText editTextInterval;
+	EditText editTextProjName;
+	EditText editTextDescription;
+	Button buttonCapture;
+
+	// --------------------------------data xml
+	SensorManager _sm;
+	MySensorListener _listener=new MySensorListener();
 	
-	//--------------------------------
-	EditText editTextCaptureNum=(EditText) findViewById(R.id.editTextCaptureNum);
-	EditText editTextInterval=(EditText) findViewById(R.id.editTextInterval);
-	EditText editTextProjName=(EditText) findViewById(R.id.editTextProjName);
-	EditText editTextDescription=(EditText) findViewById(R.id.editTextDescription);
-	Button buttonCapture=(Button) findViewById(R.id.buttonCapture);
-	//---------------------
+	File _dataXmlFile;
+	Format _format = new Format("<?xml version=\"1.0\" encoding= \"UTF-8\" ?>");
+	Persister _persister = new Persister(_format);
+
+	XmlRootNode	_newSessionNode=new NewSessionNode();
+
+	//-----UI
+	private void initWidgets() {
+		mSeekBar = (SeekBar) findViewById(R.id.seekbar);
+		
+		editTextCaptureNum = (EditText) findViewById(R.id.editTextCaptureNum);
+		editTextInterval = (EditText) findViewById(R.id.editTextInterval);
+		editTextProjName = (EditText) findViewById(R.id.editTextProjName);
+		editTextDescription = (EditText) findViewById(R.id.editTextDescription);
+		buttonCapture = (Button) findViewById(R.id.buttonCapture);
+	}//initWidgets
+
+	private void respondEvents() {
+		// --------------------seekbar 用来实现变焦逻辑
+		mSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+			@Override
+			public void onProgressChanged(SeekBar seekBar, int progress,
+					boolean fromUser) {
+				Log.d(TAG, "progress:" + progress);
+				Camera.Parameters parameters = camera.getParameters();
+				int maxZoom = parameters.getMaxZoom();
+
+				int zoom = (int) (maxZoom * progress * 1.f / seekBar.getMax());
+				parameters.setZoom(zoom);
+				camera.setParameters(parameters);
+			}//onProgressChanged
+
+			@Override
+			public void onStartTrackingTouch(SeekBar seekBar) {
+				Log.d(TAG, "onStartTrackingTouch");
+			}
+
+			@Override
+			public void onStopTrackingTouch(SeekBar seekBar) {
+				Log.d(TAG, "onStopTrackingTouch");
+				camera.autoFocus(new AutoFocusCallback() {
+					@Override
+					public void onAutoFocus(boolean success, Camera camera) {
+						if (success)
+							camera.takePicture(null, null,
+									new JpegPictureCallback());
+					}
+				});
+
+			}
+
+		});
+
+		//--------------------------buttonCapture
+		buttonCapture.setOnClickListener(new OnClickListener() {
+			@Override
+			public void onClick(View v) {
+				buttonCapture.setEnabled(false);
+				
+				//----------传感器采样
+				_listener.reset();
+				_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
+				((NewSessionNode)_newSessionNode).setBeginTime(System.currentTimeMillis()*Consts.MS2S);
+				System.out.println("setBeginTime: "+System.currentTimeMillis()*Consts.MS2S);
+
+				
+				//------------连拍
+				long interval=(long) (Float.parseFloat(editTextInterval.getText().toString())*1000);
+				int capNum=Integer.parseInt(editTextCaptureNum.getText().toString());
+				long dt=2*capNum*interval;
+				
+				CountDownTimer timer=new CountDownTimer(dt+30, interval) {
+					int cnt=0;
+					@Override
+					public void onTick(long millisUntilFinished) {
+						if(cnt%2==1){
+							//TODO: 拍照
+							System.out.println("cnt: "+cnt);
+						}
+					}
+					
+					@Override
+					public void onFinish() {
+						
+						buttonCapture.setEnabled(true);
+					}
+				};
+			}//onClick
+		});
+		
+		
+	}//respondEvents
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-
 		/*
 		 * 设置窗口属性：一定要在 setContentView(R.layout.main) 之前
 		 */
@@ -56,52 +158,15 @@ public class CameraVideo extends Activity {
 		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
 				WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
+		initWidgets();
+		respondEvents();
+		
 		SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surfaceView);
 		// surfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
 		surfaceView.getHolder().setFixedSize(200, 200);
 		surfaceView.getHolder().addCallback(new SurfaceViewCallback());
 
-		/**
-		 * seekbar 用来实现变焦逻辑
-		 */
-		mSeekBar = (SeekBar) findViewById(R.id.seekbar);
-		mSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 
-			@Override
-			public void onProgressChanged(SeekBar seekBar, int progress,
-					boolean fromUser) {
-				// TODO Auto-generated method stub
-				Log.d(TAG, "progress:" + progress);
-				Camera.Parameters parameters = camera.getParameters();
-				int maxZoom = parameters.getMaxZoom();
-
-				int zoom = (int) (maxZoom * progress * 1.f / seekBar.getMax());
-				parameters.setZoom(zoom);
-				camera.setParameters(parameters);
-			}
-
-			@Override
-			public void onStartTrackingTouch(SeekBar seekBar) {
-				// TODO Auto-generated method stub
-				Log.d(TAG, "onStartTrackingTouch");
-			}
-
-			@Override
-			public void onStopTrackingTouch(SeekBar seekBar) {
-				// TODO Auto-generated method stub
-				Log.d(TAG, "onStopTrackingTouch");
-				camera.autoFocus(new AutoFocusCallback() {
-					@Override
-					public void onAutoFocus(boolean success, Camera camera) {
-						// TODO Auto-generated method stub
-						if(success)
-							camera.takePicture(null, null, new JpegPictureCallback());
-					}
-				});
-				
-			}
-
-		});
 	}// onCreate
 
 	private final class SurfaceViewCallback implements Callback {
@@ -122,7 +187,6 @@ public class CameraVideo extends Activity {
 			try {
 				camera.setPreviewDisplay(holder);
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 
@@ -133,8 +197,8 @@ public class CameraVideo extends Activity {
 			// Display display = wm.getDefaultDisplay(); // 获取屏幕信息的描述类
 			// parameters.setPreviewSize(display.getWidth(),
 			// display.getHeight()); // 设置
-			
-//			parameters.setPreviewSize(200, 200);
+
+			// parameters.setPreviewSize(200, 200);
 
 			/* 每秒从摄像头捕获5帧画面， */
 			parameters.setPreviewFrameRate(2);
@@ -161,11 +225,8 @@ public class CameraVideo extends Activity {
 
 				@Override
 				public void onAutoFocus(boolean success, Camera camera) {
-					// TODO Auto-generated method stub
-
 				}
 			});
-			
 
 			/**
 			 * Installs a callback to be invoked for every preview frame in
@@ -181,13 +242,13 @@ public class CameraVideo extends Activity {
 				public void onPreviewFrame(byte[] data, Camera camera) {
 					// TODO Auto-generated method stub
 					// 在视频聊天中，这里传送本地frame数据给remote端
-//					Log.d(TAG, "camera:" + camera);
-//					Log.d(TAG, "byte:" + data);
+					// Log.d(TAG, "camera:" + camera);
+					// Log.d(TAG, "byte:" + data);
 				}
 
 			});
 			preview = true;
-		}
+		}//surfaceCreated
 
 		@Override
 		public void surfaceChanged(SurfaceHolder holder, int format, int width,
@@ -222,30 +283,31 @@ public class CameraVideo extends Activity {
 		public void onPictureTaken(byte[] data, Camera camera) {
 		}
 	}
-}
+}// CameraVideo
 
 class JpegPictureCallback implements PictureCallback {
 
-    @Override
-    public void onPictureTaken( byte[] data, Camera camera ) {
-    	String fname="shit.jpg";
-    	File path=Environment.getExternalStorageDirectory();
-    	File file=new File(path, fname);
-    	FileOutputStream fout;
+	@Override
+	public void onPictureTaken(byte[] data, Camera camera) {
+		String fname = "shit.jpg";
+		File path = Environment.getExternalStorageDirectory();
+		File file = new File(path, fname);
+		FileOutputStream fout;
 		try {
 			fout = new FileOutputStream(file);
 			fout.write(data);
-//			Bitmap bm=BitmapFactory.decodeByteArray(data, 0, data.length);
-//			Matrix mat=new Matrix();
-//			mat.setRotate(90);
-//			bm=Bitmap.createBitmap(bm, 0, 0, bm.getWidth(), bm.getHeight(), mat, true);
-//			bm.compress(Bitmap.CompressFormat.JPEG, 50, fout);
+			// Bitmap bm=BitmapFactory.decodeByteArray(data, 0, data.length);
+			// Matrix mat=new Matrix();
+			// mat.setRotate(90);
+			// bm=Bitmap.createBitmap(bm, 0, 0, bm.getWidth(), bm.getHeight(),
+			// mat, true);
+			// bm.compress(Bitmap.CompressFormat.JPEG, 50, fout);
 			fout.close();
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-        camera.startPreview();
-    }
-}
+		camera.startPreview();
+	}
+}// JpegPictureCallback
