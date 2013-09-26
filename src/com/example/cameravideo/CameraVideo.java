@@ -10,17 +10,13 @@ import java.util.List;
 import org.simpleframework.xml.core.Persister;
 import org.simpleframework.xml.stream.Format;
 
-import com.example.mysensorlistener.Consts;
-import com.example.mysensorlistener.MySensorListener;
-import com.zhangxaochen.xmlParser.NewSessionNode;
-import com.zhangxaochen.xmlParser.XmlRootNode;
-
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.ImageFormat;
 import android.hardware.Camera;
-import android.hardware.SensorManager;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.Environment;
@@ -35,12 +31,20 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.SeekBar;
 
+import com.example.mysensorlistener.Consts;
+import com.example.mysensorlistener.MySensorListener;
+import com.zhangxaochen.sensordataxml.NewSessionNode;
+import com.zhangxaochen.sensordataxml.XmlRootNode;
+
 public class CameraVideo extends Activity {
 
 	private static final String TAG = "CameravedioActivity";
 	private Camera camera;
 	private boolean preview = false;
 
+	final String _dataFolderName="CameraVideo-data";
+	File _dataFolder;
+	
 	// --------------------------------UI
 	private SeekBar mSeekBar;
 	EditText editTextCaptureNum;
@@ -112,6 +116,11 @@ public class CameraVideo extends Activity {
 			public void onClick(View v) {
 				buttonCapture.setEnabled(false);
 				
+				//--------------点拍摄才获取控件值
+				String projName=editTextProjName.getText().toString();
+				String projDescription=editTextDescription.getText().toString();
+				
+				
 				//----------传感器采样
 				_listener.reset();
 				_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
@@ -123,6 +132,7 @@ public class CameraVideo extends Activity {
 				long interval=(long) (Float.parseFloat(editTextInterval.getText().toString())*1000);
 				int capNum=Integer.parseInt(editTextCaptureNum.getText().toString());
 				long dt=2*capNum*interval;
+				System.out.println("dt, interval: "+dt+", "+interval);
 				
 				CountDownTimer timer=new CountDownTimer(dt+30, interval) {
 					int cnt=0;
@@ -131,22 +141,28 @@ public class CameraVideo extends Activity {
 						if(cnt%2==1){
 							//TODO: 拍照
 							System.out.println("cnt: "+cnt);
+							camera.takePicture(null, null,
+									new TakePictureCallback());
 						}
-					}
+					}//onTick
 					
 					@Override
 					public void onFinish() {
+						System.out.println("onFinish--------");
 						
+						_listener.unregisterWithSensorManager(_sm);
 						buttonCapture.setEnabled(true);
 					}
 				};
+				timer.start();
+				
 			}//onClick
 		});
 		
 		
 	}//respondEvents
-
 	@Override
+	
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		/*
@@ -158,6 +174,11 @@ public class CameraVideo extends Activity {
 		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
 				WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
+		_sm=(SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
+		_dataFolder=Environment.getExternalStoragePublicDirectory(_dataFolderName);
+		if(!_dataFolder.exists())
+			_dataFolder.mkdirs();
+		
 		initWidgets();
 		respondEvents();
 		
@@ -281,12 +302,27 @@ public class CameraVideo extends Activity {
 	private final class TakePictureCallback implements PictureCallback {
 		@Override
 		public void onPictureTaken(byte[] data, Camera camera) {
+			String fname = null;
+			File path = Environment.getExternalStorageDirectory();
+			File file = new File(path, fname);
+			FileOutputStream fout;
+			try {
+				fout = new FileOutputStream(file);
+				fout.write(data);
+				fout.close();
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			camera.startPreview();
+
 		}
 	}
 }// CameraVideo
 
-class JpegPictureCallback implements PictureCallback {
 
+class JpegPictureCallback implements PictureCallback {
 	@Override
 	public void onPictureTaken(byte[] data, Camera camera) {
 		String fname = "shit.jpg";
