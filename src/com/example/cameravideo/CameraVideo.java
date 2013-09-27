@@ -4,7 +4,10 @@ package com.example.cameravideo;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FilenameFilter;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.simpleframework.xml.core.Persister;
@@ -17,6 +20,7 @@ import android.hardware.Camera;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
 import android.hardware.SensorManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.Environment;
@@ -44,7 +48,21 @@ public class CameraVideo extends Activity {
 
 	final String _dataFolderName="CameraVideo-data";
 	File _dataFolder;
+	File _projFolder;
 	
+	final String picNamePrefix="pic";
+	final String picExt=".jpg";
+	final String projXmlName="collection-proj.xml";
+	
+	final String dataXmlPrefix="sensor";
+	final String dataXmlExt=".xml";
+	
+	//----------two arrays
+//	String[] picNames;
+//	float[] picTimestamps;
+	List<String> picNames;
+	List<Float> picTimestamps;
+
 	// --------------------------------UI
 	private SeekBar mSeekBar;
 	EditText editTextCaptureNum;
@@ -62,6 +80,7 @@ public class CameraVideo extends Activity {
 	Persister _persister = new Persister(_format);
 
 	XmlRootNode	_newSessionNode=new NewSessionNode();
+	CollectionProjXml _projConfigXmlNode=new CollectionProjXml();
 
 	//-----UI
 	private void initWidgets() {
@@ -116,9 +135,20 @@ public class CameraVideo extends Activity {
 			public void onClick(View v) {
 				buttonCapture.setEnabled(false);
 				
+				//----------------创建两个数组
+				int capNum=Integer.parseInt(editTextCaptureNum.getText().toString());
+				picNames=new ArrayList<String>();
+				picTimestamps=new ArrayList<Float>();
+				
+				
 				//--------------点拍摄才获取控件值
 				String projName=editTextProjName.getText().toString();
 				String projDescription=editTextDescription.getText().toString();
+				
+				_projConfigXmlNode.setProjName(projName);
+				_projConfigXmlNode.setProjDescription(projDescription);
+				_projConfigXmlNode.collectionCntPlusOne();
+//				_projConfigXmlNode.getCollectionsNode().collectionList.add(object)
 				
 				
 				//----------传感器采样
@@ -130,7 +160,6 @@ public class CameraVideo extends Activity {
 				
 				//------------连拍
 				long interval=(long) (Float.parseFloat(editTextInterval.getText().toString())*1000);
-				int capNum=Integer.parseInt(editTextCaptureNum.getText().toString());
 				long dt=2*capNum*interval;
 				System.out.println("dt, interval: "+dt+", "+interval);
 				
@@ -150,8 +179,50 @@ public class CameraVideo extends Activity {
 					public void onFinish() {
 						System.out.println("onFinish--------");
 						
+						//----------------------停止采样
 						_listener.unregisterWithSensorManager(_sm);
-						buttonCapture.setEnabled(true);
+						
+						//---------------------保存xml数据文件
+						System.out.println("_projFolder: "+_projFolder);
+						int dataXmlCnt = _projFolder.list(new FilenameFilter() {
+							@Override
+							public boolean accept(File dir, String filename) {
+								return filename.contains(dataXmlPrefix)
+										&& filename.endsWith(dataXmlExt);
+							}
+						}).length;
+						String dataXmlName=dataXmlPrefix+"_"+dataXmlCnt+dataXmlExt;
+						_dataXmlFile=new File(dataXmlName);
+
+						
+						WriteXmlTask task=new WriteXmlTask(){
+
+							@Override
+							protected void onPostExecute(Void result) {
+								super.onPostExecute(result);
+								
+								buttonCapture.setEnabled(true);
+							}
+							
+						};
+						task.setXmlRootNode(_newSessionNode)
+						.setFile(_dataXmlFile)
+						.setPersister(_persister)
+						.execute();
+						
+						//-------------------写配置文件
+						CollectionNode cNode=new CollectionNode();
+						cNode.setSensorName(dataXmlName);
+						cNode.addPicNodes(picNames, picTimestamps);
+						_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
+						try {
+							_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
+						} catch (Exception e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+
+						
 					}
 				};
 				timer.start();
@@ -175,9 +246,6 @@ public class CameraVideo extends Activity {
 				WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
 		_sm=(SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
-		_dataFolder=Environment.getExternalStoragePublicDirectory(_dataFolderName);
-		if(!_dataFolder.exists())
-			_dataFolder.mkdirs();
 		
 		initWidgets();
 		respondEvents();
@@ -187,6 +255,20 @@ public class CameraVideo extends Activity {
 		surfaceView.getHolder().setFixedSize(200, 200);
 		surfaceView.getHolder().addCallback(new SurfaceViewCallback());
 
+		_dataFolder=Environment.getExternalStoragePublicDirectory(_dataFolderName);
+		if(!_dataFolder.exists())
+			_dataFolder.mkdirs();
+		_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
+
+		
+		try {
+			File configFile=new File(_projFolder, projXmlName);
+			if(configFile.exists())
+				_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 
 	}// onCreate
 
@@ -295,6 +377,20 @@ public class CameraVideo extends Activity {
 		}
 
 	}
+	
+	int getPicCnt(){
+//			String projFolderName=_dataFolderName+File.separator+editTextProjName.getText().toString();
+//			File projFolder = Environment.getExternalStoragePublicDirectory(projFolderName);
+//		File projFolder =new File(_dataFolder, editTextProjName.getText().toString());
+		int picCnt=_projFolder.list(new FilenameFilter() {
+			@Override
+			public boolean accept(File dir, String filename) {
+				return filename.contains(picNamePrefix)&&filename.endsWith(picExt);
+			}
+		}).length;
+
+		return picCnt;
+	}
 
 	/**
 	 * 处理照片被拍摄之后的事件
@@ -302,12 +398,16 @@ public class CameraVideo extends Activity {
 	private final class TakePictureCallback implements PictureCallback {
 		@Override
 		public void onPictureTaken(byte[] data, Camera camera) {
-			String fname = null;
-			File path = Environment.getExternalStorageDirectory();
-			File file = new File(path, fname);
+			
+			//--------保存照片
+			int picCnt=getPicCnt();
+			
+			String picName=picNamePrefix+"_"+picCnt+picExt;
+			File picFile=new File(picName);
+			
 			FileOutputStream fout;
 			try {
-				fout = new FileOutputStream(file);
+				fout = new FileOutputStream(picFile);
 				fout.write(data);
 				fout.close();
 			} catch (FileNotFoundException e) {
@@ -316,8 +416,13 @@ public class CameraVideo extends Activity {
 				e.printStackTrace();
 			}
 			camera.startPreview();
+			
+			//------------记录拍照epoch 时间
+			Float epochTime=(float) (System.currentTimeMillis()*Consts.MS2S);
+			picTimestamps.add(epochTime);
+			picNames.add(picName);
 
-		}
+		}//onPictureTaken
 	}
 }// CameraVideo
 
@@ -347,3 +452,60 @@ class JpegPictureCallback implements PictureCallback {
 		camera.startPreview();
 	}
 }// JpegPictureCallback
+
+//非 UI 线程写文件：
+class WriteXmlTask extends AsyncTask<Void, Void, Void> {
+	XmlRootNode _xmlRootNode;
+	File _file;
+	Persister _persister;
+	
+	public WriteXmlTask() {
+	}
+	
+	public WriteXmlTask setXmlRootNode(XmlRootNode rootNode){
+		_xmlRootNode=rootNode;
+		return this;
+	}
+	
+	public WriteXmlTask setFile(File file){
+		_file=file;
+		return this;
+	}
+	
+	public WriteXmlTask setPersister(Persister persister){
+		_persister=persister;
+		return this;
+	}
+	
+	@Override
+	protected Void doInBackground(Void... params) {
+		System.out.println("doInBackground()");
+		if (_xmlRootNode == null || _file == null
+				|| _persister == null) {
+			System.out
+					.println("_xmlRootNode==null || _file==null || _persister == null");
+			return null;
+		}
+
+		try {
+//			_persister.write(_captureSessionNode, _file);
+			_persister.write(_xmlRootNode, _file);
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	@Override
+	protected void onPostExecute(Void result) {
+		System.out.println("onPostExecute");
+		super.onPostExecute(result);
+
+//		_captureSessionNode.clearAllNodes();
+		_xmlRootNode.clear();
+
+		//TODO: to be overrided...
+	}
+
+}// WriteXmlTask
