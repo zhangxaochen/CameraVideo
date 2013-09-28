@@ -163,16 +163,19 @@ public class CameraVideo extends Activity {
 				long dt=2*capNum*interval;
 				System.out.println("dt, interval: "+dt+", "+interval);
 				
-				CountDownTimer timer=new CountDownTimer(dt+30, interval) {
+				CountDownTimer timer=new CountDownTimer(dt+100, interval) {
 					int cnt=0;
 					@Override
 					public void onTick(long millisUntilFinished) {
+						System.out.println("onTick, millisUntilFinished, cnt: "+millisUntilFinished+", "+cnt);
 						if(cnt%2==1){
+							System.out.println("cnt%2==1");
 							//TODO: 拍照
 							System.out.println("cnt: "+cnt);
 							camera.takePicture(null, null,
 									new TakePictureCallback());
 						}
+						cnt++;
 					}//onTick
 					
 					@Override
@@ -182,8 +185,11 @@ public class CameraVideo extends Activity {
 						//----------------------停止采样
 						_listener.unregisterWithSensorManager(_sm);
 						
+						((NewSessionNode)_newSessionNode).setEndTime(System.currentTimeMillis()*Consts.MS2S);
+						_newSessionNode.addNode(_listener.getSensorData());
+						
 						//---------------------保存xml数据文件
-						System.out.println("_projFolder: "+_projFolder);
+						System.out.println("_projFolder: "+_projFolder+", "+_projFolder.isDirectory());
 						int dataXmlCnt = _projFolder.list(new FilenameFilter() {
 							@Override
 							public boolean accept(File dir, String filename) {
@@ -192,7 +198,8 @@ public class CameraVideo extends Activity {
 							}
 						}).length;
 						String dataXmlName=dataXmlPrefix+"_"+dataXmlCnt+dataXmlExt;
-						_dataXmlFile=new File(dataXmlName);
+						_dataXmlFile=new File(_projFolder, dataXmlName);
+						
 
 						
 						WriteXmlTask task=new WriteXmlTask(){
@@ -214,6 +221,7 @@ public class CameraVideo extends Activity {
 						CollectionNode cNode=new CollectionNode();
 						cNode.setSensorName(dataXmlName);
 						cNode.addPicNodes(picNames, picTimestamps);
+						System.out.println("_projConfigXmlNode: "+_projConfigXmlNode);
 						_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
 						try {
 							_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
@@ -259,7 +267,12 @@ public class CameraVideo extends Activity {
 		if(!_dataFolder.exists())
 			_dataFolder.mkdirs();
 		_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
-
+		
+		System.out.println("!_projFolder.exists(): "+!_projFolder.exists());
+		if(!_projFolder.exists()){
+			System.out.println("!_projFolder.exists()");
+			_projFolder.mkdirs();
+		}
 		
 		try {
 			File configFile=new File(_projFolder, projXmlName);
@@ -382,7 +395,9 @@ public class CameraVideo extends Activity {
 //			String projFolderName=_dataFolderName+File.separator+editTextProjName.getText().toString();
 //			File projFolder = Environment.getExternalStoragePublicDirectory(projFolderName);
 //		File projFolder =new File(_dataFolder, editTextProjName.getText().toString());
+		System.out.println("in getPicCnt(), _projFolder: "+_projFolder+", "+_projFolder.isDirectory());
 		int picCnt=_projFolder.list(new FilenameFilter() {
+
 			@Override
 			public boolean accept(File dir, String filename) {
 				return filename.contains(picNamePrefix)&&filename.endsWith(picExt);
@@ -398,12 +413,13 @@ public class CameraVideo extends Activity {
 	private final class TakePictureCallback implements PictureCallback {
 		@Override
 		public void onPictureTaken(byte[] data, Camera camera) {
-			
+			System.out.println("onPictureTaken~~~~~~~~~~~~~~~~~~~~~~~~");
 			//--------保存照片
 			int picCnt=getPicCnt();
 			
 			String picName=picNamePrefix+"_"+picCnt+picExt;
-			File picFile=new File(picName);
+			File picFile=new File(_projFolder, picName);
+			System.out.println("picFile: "+picFile.getAbsolutePath());
 			
 			FileOutputStream fout;
 			try {

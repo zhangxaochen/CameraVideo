@@ -7,6 +7,8 @@ import org.simpleframework.xml.Element;
 import org.simpleframework.xml.ElementList;
 import org.simpleframework.xml.Root;
 
+import com.zhangxaochen.sensordataxml.NewSessionNode;
+
 import android.R.id;
 
 @Root(name="collection-seq")
@@ -21,7 +23,7 @@ public class CollectionProjXml {
 	private int collectionCnt=0;
 	
 	@Element(name="collections")
-	private CollectionsNode collectionsNode;
+	private CollectionsNode collectionsNode=new CollectionsNode();
 	
 	//------------getter and setter
 	public String getProjName() {
@@ -63,7 +65,7 @@ public class CollectionProjXml {
 }
 
 class CollectionsNode{
-	@ElementList(entry="collection")
+	@ElementList(entry="collection", inline=true)
 	List<CollectionNode> collectionList=new ArrayList<CollectionNode>();
 }
 
@@ -72,7 +74,7 @@ class CollectionNode{
 	int picCount=0;
 
 	@Element(name="pics")
-	PicsNode picsNode;
+	PicsNode picsNode=new PicsNode();
 	
 //	@ElementList(entry="pic")
 //	List<PicNode> picList=new ArrayList<PicNode>();
@@ -123,7 +125,7 @@ class CollectionNode{
 }
 
 class PicsNode{
-	@ElementList(entry="pic")
+	@ElementList(entry="pic", inline=true)
 	List<PicNode> picList=new ArrayList<PicNode>();
 }
 
