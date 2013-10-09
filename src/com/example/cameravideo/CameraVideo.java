@@ -226,7 +226,6 @@ public class CameraVideo extends Activity {
 						try {
 							_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
 						} catch (Exception e) {
-							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
 
@@ -279,7 +278,6 @@ public class CameraVideo extends Activity {
 			if(configFile.exists())
 				_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
 		} catch (Exception e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 
@@ -424,8 +422,13 @@ public class CameraVideo extends Activity {
 			FileOutputStream fout;
 			try {
 				fout = new FileOutputStream(picFile);
-				fout.write(data);
-				fout.close();
+//				fout.write(data);
+//				fout.close();
+				//--------------------------“Ï≤Ω¥Ê’’∆¨
+				WriteFoutTask foutTask=new WriteFoutTask();
+				foutTask.setFout(fout)
+				.setData(data)
+				.execute();				
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -521,7 +524,44 @@ class WriteXmlTask extends AsyncTask<Void, Void, Void> {
 //		_captureSessionNode.clearAllNodes();
 		_xmlRootNode.clear();
 
-		//TODO: to be overrided...
 	}
 
 }// WriteXmlTask
+
+class WriteFoutTask extends AsyncTask<Void, Void, Void>{
+	FileOutputStream fout;
+	byte[] data;
+	
+	@Override
+	protected Void doInBackground(Void... params) {
+		// TODO Auto-generated method stub
+		try {
+			fout.write(data);
+			fout.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	public FileOutputStream getFout() {
+		return fout;
+	}
+
+	public WriteFoutTask setFout(FileOutputStream fout) {
+		this.fout = fout;
+		return this;
+	}
+
+	public byte[] getData() {
+		return data;
+	}
+
+	public WriteFoutTask setData(byte[] data) {
+		this.data = data;
+		return this;
+	}
+
+
+	
+}
