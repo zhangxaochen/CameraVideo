@@ -133,6 +133,23 @@ public class CameraVideo extends Activity {
 		buttonCapture.setOnClickListener(new OnClickListener() {
 			@Override
 			public void onClick(View v) {
+				//检查proj 文件夹是否存在，如果不存在则新建：
+				_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
+				
+				System.out.println("!_projFolder.exists(): "+!_projFolder.exists());
+				if(!_projFolder.exists()){
+					System.out.println("!_projFolder.exists()");
+					_projFolder.mkdirs();
+				}
+				
+				try {
+					File configFile=new File(_projFolder, projXmlName);
+					if(configFile.exists())
+						_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+
 				buttonCapture.setEnabled(false);
 				
 				//----------------创建两个数组
@@ -265,21 +282,23 @@ public class CameraVideo extends Activity {
 		_dataFolder=Environment.getExternalStoragePublicDirectory(_dataFolderName);
 		if(!_dataFolder.exists())
 			_dataFolder.mkdirs();
-		_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
 		
-		System.out.println("!_projFolder.exists(): "+!_projFolder.exists());
-		if(!_projFolder.exists()){
-			System.out.println("!_projFolder.exists()");
-			_projFolder.mkdirs();
-		}
-		
-		try {
-			File configFile=new File(_projFolder, projXmlName);
-			if(configFile.exists())
-				_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		//移到 buttonCapture onClick:
+//		_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
+//		
+//		System.out.println("!_projFolder.exists(): "+!_projFolder.exists());
+//		if(!_projFolder.exists()){
+//			System.out.println("!_projFolder.exists()");
+//			_projFolder.mkdirs();
+//		}
+//		
+//		try {
+//			File configFile=new File(_projFolder, projXmlName);
+//			if(configFile.exists())
+//				_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
+//		} catch (Exception e) {
+//			e.printStackTrace();
+//		}
 
 	}// onCreate
 
