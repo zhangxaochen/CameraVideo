@@ -225,8 +225,17 @@ public class CameraVideo extends Activity {
 							protected void onPostExecute(Void result) {
 								super.onPostExecute(result);
 								
+								//zip 压缩整个文件夹
+								String zipName=_projFolder.getName()+".zip";
+								try {
+									ZipUtility.zipDirectory(_projFolder, new File(_projFolder.getParent(), zipName)	);
+								} catch (IOException e) {
+									// TODO Auto-generated catch block
+									e.printStackTrace();
+								}
+								
 								buttonCapture.setEnabled(true);
-							}
+							}//onPostExecute
 							
 						};
 						task.setXmlRootNode(_newSessionNode)
