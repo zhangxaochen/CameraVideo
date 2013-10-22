@@ -15,11 +15,11 @@ public class ZipUtility {
 	//http://www.crazysquirrel.com/computing/java/basics/java-directory-zipping.jspx
 	//http://crackren.iteye.com/blog/752732
 
-	public static final void zipDirectory(File directory, File zipFile)
+	public static final void zipDirectory(File directory, File zip)
 			throws IOException {
 		System.out.println("in zipDirectory()");
 
-		ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile));
+		ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zip));
 		zip(directory, directory, zos);
 		zos.close();
 	}
