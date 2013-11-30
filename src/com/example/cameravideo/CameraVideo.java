@@ -87,6 +87,8 @@ public class CameraVideo extends Activity {
 		mSeekBar = (SeekBar) findViewById(R.id.seekbar);
 		
 		editTextCaptureNum = (EditText) findViewById(R.id.editTextCaptureNum);
+		editTextCaptureNum.setEnabled(false);
+		
 		editTextInterval = (EditText) findViewById(R.id.editTextInterval);
 		editTextProjName = (EditText) findViewById(R.id.editTextProjName);
 		editTextDescription = (EditText) findViewById(R.id.editTextDescription);
@@ -119,9 +121,9 @@ public class CameraVideo extends Activity {
 				camera.autoFocus(new AutoFocusCallback() {
 					@Override
 					public void onAutoFocus(boolean success, Camera camera) {
-						if (success)
-							camera.takePicture(null, null,
-									new JpegPictureCallback());
+//						if (success)
+//							camera.takePicture(null, null,
+//									new JpegPictureCallback());
 					}
 				});
 
@@ -180,7 +182,8 @@ public class CameraVideo extends Activity {
 				long dt=2*capNum*interval;
 				System.out.println("dt, interval: "+dt+", "+interval);
 				
-				CountDownTimer timer=new CountDownTimer(dt+100, interval) {
+//				CountDownTimer timer=new CountDownTimer(dt+100, interval) {
+				CountDownTimer timer=new CountDownTimer(interval+100, interval) {
 					int cnt=0;
 					@Override
 					public void onTick(long millisUntilFinished) {
