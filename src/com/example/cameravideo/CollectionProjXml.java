@@ -106,7 +106,7 @@ class CollectionNode{
 		this.sensorName = sensorName;
 	}	
 	
-	public void addPicNodes(List<String> picNames, List<Float> timeStamps ){
+	public void addPicNodes(List<String> picNames, List<Double> timeStamps ){
 //	public void addPicNodes(String[] picNames, float[] timeStamps) {
 		this.setPicCount(picNames.size());
 
@@ -116,6 +116,7 @@ class CollectionNode{
 			PicNode picNode=new PicNode();
 			picNode.picName=picNames.get(i);
 			picNode.timeStamp=timeStamps.get(i);
+			System.out.println("picNode.picName, picNode.timeStamp"+picNode.picName+","+picNode.timeStamp);
 			
 			picsNode.picList.add(picNode);
 		}
@@ -134,5 +135,5 @@ class PicNode{
 	String picName;
 	
 	@Element(name="timestamp")
-	float timeStamp;
+	double timeStamp;
 }

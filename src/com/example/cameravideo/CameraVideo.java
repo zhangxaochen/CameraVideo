@@ -6,7 +6,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,6 +18,7 @@ import android.graphics.ImageFormat;
 import android.hardware.Camera;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
+import android.hardware.Camera.ShutterCallback;
 import android.hardware.SensorManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -56,12 +56,13 @@ public class CameraVideo extends Activity {
 	
 	final String dataXmlPrefix="sensor";
 	final String dataXmlExt=".xml";
+	String dataXmlName="";
 	
 	//----------two arrays
 //	String[] picNames;
 //	float[] picTimestamps;
 	List<String> picNames;
-	List<Float> picTimestamps;
+	List<Double> picTimestamps;
 
 	// --------------------------------UI
 	private SeekBar mSeekBar;
@@ -146,8 +147,11 @@ public class CameraVideo extends Activity {
 				
 				try {
 					File configFile=new File(_projFolder, projXmlName);
+					System.out.println("---configFile.exists(): "+configFile.exists());
 					if(configFile.exists())
 						_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
+					else
+						_projConfigXmlNode=new CollectionProjXml();
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
@@ -157,7 +161,7 @@ public class CameraVideo extends Activity {
 				//----------------创建两个数组
 				int capNum=Integer.parseInt(editTextCaptureNum.getText().toString());
 				picNames=new ArrayList<String>();
-				picTimestamps=new ArrayList<Float>();
+				picTimestamps=new ArrayList<Double>();
 				
 				
 				//--------------点拍摄才获取控件值
@@ -182,8 +186,7 @@ public class CameraVideo extends Activity {
 				long dt=2*capNum*interval;
 				System.out.println("dt, interval: "+dt+", "+interval);
 				
-//				CountDownTimer timer=new CountDownTimer(dt+100, interval) {
-				CountDownTimer timer=new CountDownTimer(interval+100, interval) {
+				CountDownTimer timer=new CountDownTimer(dt+100, interval) {
 					int cnt=0;
 					@Override
 					public void onTick(long millisUntilFinished) {
@@ -192,7 +195,30 @@ public class CameraVideo extends Activity {
 							System.out.println("cnt%2==1");
 							//TODO: 拍照
 							System.out.println("cnt: "+cnt);
-							camera.takePicture(null, null,
+							
+							int picCnt=getPicCnt();
+							String picName=picNamePrefix+"_"+picCnt+picExt;
+							//------------记录拍照epoch 时间
+							Double epochTime=System.currentTimeMillis()*Consts.MS2S;
+							picTimestamps.add(epochTime);
+							picNames.add(picName);
+							System.out.println("------------picName, epochTime: "+picName+", "+epochTime);
+
+							//-------------------写配置文件
+							CollectionNode cNode=new CollectionNode();
+							cNode.setSensorName(dataXmlName);
+							cNode.addPicNodes(picNames, picTimestamps);
+							System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
+							_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
+							try {
+								_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
+							} catch (Exception e) {
+								e.printStackTrace();
+							}
+
+//							camera.takePicture(null, 
+							camera.takePicture(new MyShutterCallback(), 
+									null,
 									new TakePictureCallback());
 						}
 						cnt++;
@@ -217,7 +243,7 @@ public class CameraVideo extends Activity {
 										&& filename.endsWith(dataXmlExt);
 							}
 						}).length;
-						String dataXmlName=dataXmlPrefix+"_"+dataXmlCnt+dataXmlExt;
+						dataXmlName=dataXmlPrefix+"_"+dataXmlCnt+dataXmlExt;
 						_dataXmlFile=new File(_projFolder, dataXmlName);
 						
 
@@ -231,7 +257,10 @@ public class CameraVideo extends Activity {
 								//zip 压缩整个文件夹
 								String zipName=_projFolder.getName()+".zip";
 								try {
-									ZipUtility.zipDirectory(_projFolder, new File(_projFolder.getParent(), zipName)	);
+									File zipFile=new File(_projFolder.getParent(), zipName);
+									if(zipFile.exists())
+										zipFile.delete();
+									ZipUtility.zipDirectory(_projFolder, zipFile);
 								} catch (IOException e) {
 									// TODO Auto-generated catch block
 									e.printStackTrace();
@@ -246,17 +275,18 @@ public class CameraVideo extends Activity {
 						.setPersister(_persister)
 						.execute();
 						
-						//-------------------写配置文件
-						CollectionNode cNode=new CollectionNode();
-						cNode.setSensorName(dataXmlName);
-						cNode.addPicNodes(picNames, picTimestamps);
-						System.out.println("_projConfigXmlNode: "+_projConfigXmlNode);
-						_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
-						try {
-							_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
-						} catch (Exception e) {
-							e.printStackTrace();
-						}
+						//移到 takepic..callback
+//						//-------------------写配置文件
+//						CollectionNode cNode=new CollectionNode();
+//						cNode.setSensorName(dataXmlName);
+//						cNode.addPicNodes(picNames, picTimestamps);
+//						System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
+//						_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
+//						try {
+//							_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
+//						} catch (Exception e) {
+//							e.printStackTrace();
+//						}
 
 						
 					}
@@ -435,6 +465,35 @@ public class CameraVideo extends Activity {
 
 		return picCnt;
 	}
+	
+	private final class MyShutterCallback implements ShutterCallback{
+
+		@Override
+		public void onShutter() {
+			// TODO Auto-generated method stub
+//			int picCnt=getPicCnt();
+//			String picName=picNamePrefix+"_"+picCnt+picExt;
+//			//------------记录拍照epoch 时间
+//			Double epochTime=System.currentTimeMillis()*Consts.MS2S;
+//			picTimestamps.add(epochTime);
+//			picNames.add(picName);
+//			System.out.println("------------picName, epochTime: "+picName+", "+epochTime);
+//
+//			//-------------------写配置文件
+//			CollectionNode cNode=new CollectionNode();
+//			cNode.setSensorName(dataXmlName);
+//			cNode.addPicNodes(picNames, picTimestamps);
+//			System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
+//			_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
+//			try {
+//				_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
+//			} catch (Exception e) {
+//				e.printStackTrace();
+//			}
+
+		}
+		
+	}//MyShutterCallback
 
 	/**
 	 * 处理照片被拍摄之后的事件
@@ -467,11 +526,23 @@ public class CameraVideo extends Activity {
 			}
 			camera.startPreview();
 			
-			//------------记录拍照epoch 时间
-			Float epochTime=(float) (System.currentTimeMillis()*Consts.MS2S);
-			picTimestamps.add(epochTime);
-			picNames.add(picName);
-
+//			//------------记录拍照epoch 时间
+//			Double epochTime=System.currentTimeMillis()*Consts.MS2S;
+//			picTimestamps.add(epochTime);
+//			picNames.add(picName);
+//			System.out.println("------------picName, epochTime: "+picName+", "+epochTime);
+//
+//			//-------------------写配置文件
+//			CollectionNode cNode=new CollectionNode();
+//			cNode.setSensorName(dataXmlName);
+//			cNode.addPicNodes(picNames, picTimestamps);
+//			System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
+//			_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
+//			try {
+//				_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
+//			} catch (Exception e) {
+//				e.printStackTrace();
+//			}
 		}//onPictureTaken
 	}
 }// CameraVideo
