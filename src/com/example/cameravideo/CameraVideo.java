@@ -12,6 +12,7 @@ import java.util.List;
 import org.simpleframework.xml.core.Persister;
 import org.simpleframework.xml.stream.Format;
 
+import android.R.bool;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.ImageFormat;
@@ -41,7 +42,9 @@ import com.zhangxaochen.sensordataxml.NewSessionNode;
 import com.zhangxaochen.sensordataxml.XmlRootNode;
 
 public class CameraVideo extends Activity {
-
+	boolean savePicFinished=false;
+	boolean saveXmlFinished=false;
+	
 	private static final String TAG = "CameravedioActivity";
 	private Camera camera;
 	private boolean preview = false;
@@ -175,8 +178,11 @@ public class CameraVideo extends Activity {
 				
 				
 				//----------传感器采样
-				_listener.reset();
-				_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
+				//移到 onCreate， 2013年12月18日1:38:27
+//				_listener.reset();
+//				_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
+				_listener.clearAllBuf();
+				
 				((NewSessionNode)_newSessionNode).setBeginTime(System.currentTimeMillis()*Consts.MS2S);
 				System.out.println("setBeginTime: "+System.currentTimeMillis()*Consts.MS2S);
 
@@ -216,8 +222,8 @@ public class CameraVideo extends Activity {
 								e.printStackTrace();
 							}
 
-//							camera.takePicture(null, 
-							camera.takePicture(new MyShutterCallback(), 
+							camera.takePicture(null, 
+//							camera.takePicture(new MyShutterCallback(), 
 									null,
 									new TakePictureCallback());
 						}
@@ -229,7 +235,8 @@ public class CameraVideo extends Activity {
 						System.out.println("onFinish--------");
 						
 						//----------------------停止采样
-						_listener.unregisterWithSensorManager(_sm);
+						//移到 onPause, 2013年12月18日1:40:24
+//						_listener.unregisterWithSensorManager(_sm);
 						
 						((NewSessionNode)_newSessionNode).setEndTime(System.currentTimeMillis()*Consts.MS2S);
 						_newSessionNode.addNode(_listener.getSensorData());
@@ -266,7 +273,13 @@ public class CameraVideo extends Activity {
 //									e.printStackTrace();
 //								}
 								
-								buttonCapture.setEnabled(true);
+								saveXmlFinished=true;
+//								if(shouldEnableBtn()){
+//									buttonCapture.setEnabled(true);
+//									saveXmlFinished=false;
+//									savePicFinished=false;
+//								}
+								enableCaptureButton();
 							}//onPostExecute
 							
 						};
@@ -298,8 +311,39 @@ public class CameraVideo extends Activity {
 		
 		
 	}//respondEvents
-	@Override
+
 	
+	@Override
+	protected void onResume() {
+		super.onResume();
+	
+		_listener.reset();
+		_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
+
+	}//onResume
+
+	@Override
+	protected void onPause() {
+		super.onPause();
+		
+		_listener.unregisterWithSensorManager(_sm);
+	}//onPause
+	
+//	boolean shouldEnableBtn(){
+//		if(savePicFinished&&saveXmlFinished){
+//			return true;
+//		}
+//		return false;
+//	}
+	void enableCaptureButton(){
+		if(savePicFinished&&saveXmlFinished){
+			buttonCapture.setEnabled(true);
+			savePicFinished=false;
+			saveXmlFinished=false;
+		}
+	}//enableCaptureButton
+
+	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		/*
@@ -312,7 +356,7 @@ public class CameraVideo extends Activity {
 				WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
 		_sm=(SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
-		
+
 		initWidgets();
 		respondEvents();
 		
@@ -515,7 +559,22 @@ public class CameraVideo extends Activity {
 //				fout.write(data);
 //				fout.close();
 				//--------------------------异步存照片
-				WriteFoutTask foutTask=new WriteFoutTask();
+				WriteFoutTask foutTask=new WriteFoutTask(){
+
+					@Override
+					protected void onPostExecute(Void result) {
+						super.onPostExecute(result);
+						
+						savePicFinished=true;
+//						if(shouldEnableBtn()){
+//							buttonCapture.setEnabled(true);
+//							savePicFinished=false;
+//							saveXmlFinished=false;
+//						}
+						enableCaptureButton();
+					}
+					
+				};
 				foutTask.setFout(fout)
 				.setData(data)
 				.execute();				
@@ -526,23 +585,6 @@ public class CameraVideo extends Activity {
 			}
 			camera.startPreview();
 			
-//			//------------记录拍照epoch 时间
-//			Double epochTime=System.currentTimeMillis()*Consts.MS2S;
-//			picTimestamps.add(epochTime);
-//			picNames.add(picName);
-//			System.out.println("------------picName, epochTime: "+picName+", "+epochTime);
-//
-//			//-------------------写配置文件
-//			CollectionNode cNode=new CollectionNode();
-//			cNode.setSensorName(dataXmlName);
-//			cNode.addPicNodes(picNames, picTimestamps);
-//			System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
-//			_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
-//			try {
-//				_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
-//			} catch (Exception e) {
-//				e.printStackTrace();
-//			}
 		}//onPictureTaken
 	}
 }// CameraVideo
