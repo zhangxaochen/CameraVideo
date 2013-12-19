@@ -16,11 +16,15 @@ import android.R.bool;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.ImageFormat;
+import android.graphics.PixelFormat;
 import android.hardware.Camera;
 import android.hardware.Camera.AutoFocusCallback;
 import android.hardware.Camera.PictureCallback;
 import android.hardware.Camera.ShutterCallback;
+import android.hardware.Camera.Size;
 import android.hardware.SensorManager;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.CountDownTimer;
@@ -42,670 +46,582 @@ import com.zhangxaochen.sensordataxml.NewSessionNode;
 import com.zhangxaochen.sensordataxml.XmlRootNode;
 
 public class CameraVideo extends Activity {
-	boolean savePicFinished=false;
-	boolean saveXmlFinished=false;
-	
-	private static final String TAG = "CameravedioActivity";
-	private Camera camera;
-	private boolean preview = false;
+    boolean savePicFinished = false;
+    boolean saveXmlFinished = false;
+    
+    private static final String TAG = "CameravedioActivity";
+    private Camera camera;
+    private boolean preview = false;
+    
+    final String _dataFolderName = "CameraVideo-data";
+    File _dataFolder;
+    File _projFolder;
+    
+    final String picNamePrefix = "pic";
+    
+    final String picExt = ".jpg";
+    final String projXmlName = "collection-proj.xml";
+    
+    final String dataXmlPrefix = "sensor";
+    final String dataXmlExt = ".xml";
+    String dataXmlName = "";
 
-	final String _dataFolderName="CameraVideo-data";
-	File _dataFolder;
-	File _projFolder;
-	
-	final String picNamePrefix="pic";
-	final String picExt=".jpg";
-	final String projXmlName="collection-proj.xml";
-	
-	final String dataXmlPrefix="sensor";
-	final String dataXmlExt=".xml";
-	String dataXmlName="";
-	
-	//----------two arrays
-//	String[] picNames;
-//	float[] picTimestamps;
-	List<String> picNames;
-	List<Double> picTimestamps;
+    
+    // --------------------------------UI
+    private SeekBar mSeekBar;
+    EditText editTextCaptureNum;
+    EditText editTextInterval;
+    EditText editTextProjName;
+    EditText editTextDescription;
+    Button buttonCapture;
+    
+    // --------------------------------data xml
+    SensorManager _sm;
+    MySensorListener _listener = new MySensorListener();
+    
+    File _dataXmlFile;
+    
+    /* ç”¨æ¥save xmlæ–‡ä»¶å¯¹è±¡ */
+    Persister _persister = new Persister(new Format("<?xml version=\"1.0\" encoding= \"UTF-8\" ?>"));
+    
+    /* ä¿å­˜ä¼ æ„Ÿå™¨æ•°æ®å¯¹è±¡ */
+    NewSessionNode _newSessionNode = new NewSessionNode();
+    
+    /* ä¿å­˜é‡‡é›†å·¥ç¨‹å¯¹è±¡ */
+    CollectionProjXml _projConfigXmlNode = new CollectionProjXml();
 
-	// --------------------------------UI
-	private SeekBar mSeekBar;
-	EditText editTextCaptureNum;
-	EditText editTextInterval;
-	EditText editTextProjName;
-	EditText editTextDescription;
-	Button buttonCapture;
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        /*
+         * è®¾ç½®çª—å£å±æ€§ï¼šä¸€å®šè¦åœ¨ setContentView(R.layout.main) ä¹‹å‰
+         */
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                             WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        setContentView(R.layout.activity_main);
+        _sm = (SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
+        
+        initWidgets();
+        respondEvents();
+        
+        SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surfaceView);
+        // surfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        surfaceView.getHolder().setFixedSize(200, 200);
+        surfaceView.getHolder().addCallback(new SurfaceViewCallback());
+        
+        // è®¾ç½®å­˜å‚¨ç›®å½•
+        _dataFolder = Environment.getExternalStoragePublicDirectory(_dataFolderName);
+        if(!_dataFolder.exists())
+            _dataFolder.mkdirs();
+    }// onCreate
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        
+        /* å¯åŠ¨å°±æ³¨å†Œé‡‡é›†æ•°æ® */
+        _listener.reset();
+        _listener.registerWithSensorManager(_sm, Consts.aMillion / 30);
+    }//onResume
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        
+        _listener.unregisterWithSensorManager(_sm);
+    }//onPause
 
-	// --------------------------------data xml
-	SensorManager _sm;
-	MySensorListener _listener=new MySensorListener();
-	
-	File _dataXmlFile;
-	Format _format = new Format("<?xml version=\"1.0\" encoding= \"UTF-8\" ?>");
-	Persister _persister = new Persister(_format);
+    //-----UI
+    private void initWidgets() {
+        mSeekBar = (SeekBar) findViewById(R.id.seekbar);
+        
+        editTextCaptureNum = (EditText) findViewById(R.id.editTextCaptureNum);
+        editTextCaptureNum.setEnabled(false);
+        
+        editTextInterval = (EditText) findViewById(R.id.editTextInterval);
+        editTextProjName = (EditText) findViewById(R.id.editTextProjName);
+        editTextDescription = (EditText) findViewById(R.id.editTextDescription);
+        buttonCapture = (Button) findViewById(R.id.buttonCapture);
+    }//initWidgets
+    
+    /**
+     * åŠ å…¥seekbarçš„zoomåŠŸèƒ½
+     */
+    private void seekbar_event_impl() {
+        mSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                /* ä¿®æ”¹äº†ä¸€ä¸‹è°ƒèŠ‚çš„é€»è¾‘ï¼Œä½¿ç”¨ç®€å•çš„æ–¹å¼ï¼Œå°†seekbarçš„æœ€å¤§è°ƒèŠ‚èŒƒå›´è®¾ç½®æˆparamters.getMaxZoom(),
+                 * ç„¶åç›´æ¥æ ¹æ®å½“å‰seekbarçš„progressæ¥è°ƒèŠ‚æ‘„åƒå¤´çš„zoomå¤§å°
+                 */
+                Camera.Parameters parameters = camera.getParameters();
+                if(parameters.isZoomSupported()) {
+                    Log.e("progress", String.valueOf(progress));
+                    parameters.setZoom(progress);
+                    camera.setParameters(parameters);
+                }
+            }//onProgressChanged
+            
+            @Override
+            public void onStartTrackingTouch(SeekBar arg0) {
+            }
+            
+            @Override
+            public void onStopTrackingTouch(SeekBar arg0) {
+            }
+        });
+    }
+    
+    /**
+     * å¾—åˆ°å½“å‰å·¥ç¨‹æ–‡ä»¶çš„èŠ‚ç‚¹æ•°æ®ç»“æ„
+     */
+    private void prepare_project_config_xml_node() {
+        /* è·å–å½“å‰å·¥ç¨‹åç§°å’Œæè¿°ä¿¡æ¯ */
+        String projName = editTextProjName.getText().toString();
+        String projDescription = editTextDescription.getText().toString();
+        
+        /* æ£€æŸ¥ projæ–‡ä»¶å¤¹æ˜¯å¦å­˜åœ¨ï¼Œå¦‚æœä¸å­˜åœ¨åˆ™æ–°å»º */
+        _projFolder = new File(_dataFolder, projName);
+        if(!_projFolder.exists()) {
+            _projFolder.mkdirs();
+        }
+        
+        /* åˆ›å»ºé‡‡é›†å·¥ç¨‹xmlæ–‡ä»¶ */
+        try {
+            File configFile = new File(_projFolder, projXmlName);
+            if(configFile.exists())
+                _projConfigXmlNode = _persister.read(CollectionProjXml.class, configFile);
+            else
+                _projConfigXmlNode = new CollectionProjXml();
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+        
+        _projConfigXmlNode.setProjName(projName);
+        _projConfigXmlNode.setProjDescription(projDescription);
+        _projConfigXmlNode.collectionCntPlusOne();
+    }
 
-	XmlRootNode	_newSessionNode=new NewSessionNode();
-	CollectionProjXml _projConfigXmlNode=new CollectionProjXml();
+    /**
+     * å‹ç¼©å½“å‰projç›®å½•
+     */
+    private void zip_current_proj_directory() {
+    	String zipName=_projFolder.getName()+".zip";
 
-	//-----UI
-	private void initWidgets() {
-		mSeekBar = (SeekBar) findViewById(R.id.seekbar);
-		
-		editTextCaptureNum = (EditText) findViewById(R.id.editTextCaptureNum);
-		editTextCaptureNum.setEnabled(false);
-		
-		editTextInterval = (EditText) findViewById(R.id.editTextInterval);
-		editTextProjName = (EditText) findViewById(R.id.editTextProjName);
-		editTextDescription = (EditText) findViewById(R.id.editTextDescription);
-		buttonCapture = (Button) findViewById(R.id.buttonCapture);
-	}//initWidgets
+    	try {
+    		File zipFile=new File(_projFolder.getParent(), zipName);
+    		if(zipFile.exists())
+    			zipFile.delete();
+    		ZipUtility.zipDirectory(_projFolder, zipFile);
+    	} catch (IOException e) {
+    		e.printStackTrace();
+    	}
+    }
 
-	private void respondEvents() {
-		// --------------------seekbar ÓÃÀ´ÊµÏÖ±ä½¹Âß¼­
-		mSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-			@Override
-			public void onProgressChanged(SeekBar seekBar, int progress,
-					boolean fromUser) {
-				Log.d(TAG, "progress:" + progress);
-				Camera.Parameters parameters = camera.getParameters();
-				int maxZoom = parameters.getMaxZoom();
+    /**
+     * é‡‡é›†ä¼ æ„Ÿå™¨æ•°æ®ï¼Œå¹¶ä¸”åœ¨ç›¸éš”delay_timeä¹‹åé‡‡é›†ç…§ç‰‡æ•°æ®
+     */
+    private class capture_sensor_and_picture_t extends CountDownTimer {
+        /**
+         * å­˜åœ¨bugåœ¨sumsungæ‰‹æœºä¸Šï¼Œå¦‚æœè®¾ç½®æ—¶é—´ä¸º(2*interval, interval)ï¼Œé‚£ä¹ˆ
+         * ç¬¬ä¸€ä¸‹çš„onTickå°†åœ¨Timerå¯åŠ¨æ—¶å€™è°ƒç”¨ï¼Œè€Œä¸æ˜¯åœ¨intervalæ—¶å€™è°ƒç”¨ã€‚
+         *
+         * ç”¨äº†æ¯”è¾ƒnaiveçš„æ–¹æ³•æ¥è§£å†³ï¼Œè®¾ç½®æ€»æ—¶é—´ä¸º3ä¸ªæ—¶é—´é—´éš”ï¼Œåœ¨ç¬¬äºŒä¸ªonTickè°ƒç”¨æ—¶å€™ï¼Œæ‹æ‘„ç…§ç‰‡
+         */
+    	public capture_sensor_and_picture_t(long delay_time) {
+    		super(3*delay_time, delay_time);
+    	}
 
-				int zoom = (int) (maxZoom * progress * 1.f / seekBar.getMax());
-				parameters.setZoom(zoom);
-				camera.setParameters(parameters);
-			}//onProgressChanged
+    	private int cnt = 0;
 
-			@Override
-			public void onStartTrackingTouch(SeekBar seekBar) {
-				Log.d(TAG, "onStartTrackingTouch");
-			}
+    	/* ä¸ºäº†å’Œä¹‹å‰è®¾è®¡å…¼å®¹ï¼Œä½¿ç”¨Listæ¥å­˜æ”¾å…¶å®åªæœ‰ä¸€å¼ ç…§ç‰‡çš„æ•°æ®ä¿¡æ¯ */
+    	private List<String> picNames = new ArrayList<String>();
+    	private List<Double> picTimestamps = new ArrayList<Double>();
 
-			@Override
-			public void onStopTrackingTouch(SeekBar seekBar) {
-				Log.d(TAG, "onStopTrackingTouch");
-				camera.autoFocus(new AutoFocusCallback() {
-					@Override
-					public void onAutoFocus(boolean success, Camera camera) {
-//						if (success)
-//							camera.takePicture(null, null,
-//									new JpegPictureCallback());
-					}
-				});
+    	@Override
+    	public void onTick(long millisUntilFinished) {
+    		System.out.println("onTick, millisUntilFinished, cnt: " + millisUntilFinished + ", " + cnt);
 
-			}
+    		/* ç¬¬äºŒæ¬¡tickçš„æ—¶å€™æ‹ç…§ */
+    		if(cnt == 1) {
+    			// ç…§ç‰‡åç§°
+    			int picCnt = getPicCnt();
+    			String picName = picNamePrefix + "_" + picCnt + picExt;
 
-		});
+    			// è®°å½•æ‹ç…§epoch æ—¶é—´
+    			Double epochTime = System.currentTimeMillis() * Consts.MS2S;
+    			picTimestamps.add(epochTime);
+    			picNames.add(picName);
 
-		//--------------------------buttonCapture
-		buttonCapture.setOnClickListener(new OnClickListener() {
-			@Override
-			public void onClick(View v) {
-				//¼ì²éproj ÎÄ¼ş¼ĞÊÇ·ñ´æÔÚ£¬Èç¹û²»´æÔÚÔòĞÂ½¨£º
-				_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
-				
-				System.out.println("!_projFolder.exists(): "+!_projFolder.exists());
-				if(!_projFolder.exists()){
-					System.out.println("!_projFolder.exists()");
-					_projFolder.mkdirs();
-				}
-				
-				try {
-					File configFile=new File(_projFolder, projXmlName);
-					System.out.println("---configFile.exists(): "+configFile.exists());
-					if(configFile.exists())
-						_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
-					else
-						_projConfigXmlNode=new CollectionProjXml();
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
+    			// è·å–ä¼ æ„Ÿå™¨åç§°
+    			dataXmlName = dataXmlPrefix + "_" + picCnt + dataXmlExt;
 
-				buttonCapture.setEnabled(false);
-				
-				//----------------´´½¨Á½¸öÊı×é
-				int capNum=Integer.parseInt(editTextCaptureNum.getText().toString());
-				picNames=new ArrayList<String>();
-				picTimestamps=new ArrayList<Double>();
-				
-				
-				//--------------µãÅÄÉã²Å»ñÈ¡¿Ø¼şÖµ
-				String projName=editTextProjName.getText().toString();
-				String projDescription=editTextDescription.getText().toString();
-				
-				_projConfigXmlNode.setProjName(projName);
-				_projConfigXmlNode.setProjDescription(projDescription);
-				_projConfigXmlNode.collectionCntPlusOne();
-//				_projConfigXmlNode.getCollectionsNode().collectionList.add(object)
-				
-				
-				//----------´«¸ĞÆ÷²ÉÑù
-				//ÒÆµ½ onCreate£¬ 2013Äê12ÔÂ18ÈÕ1:38:27
-//				_listener.reset();
-//				_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
-				_listener.clearAllBuf();
-				
-				((NewSessionNode)_newSessionNode).setBeginTime(System.currentTimeMillis()*Consts.MS2S);
-				System.out.println("setBeginTime: "+System.currentTimeMillis()*Consts.MS2S);
+    			/* åŠ å…¥ä¸€æ¬¡æ–°çš„collectionèŠ‚ç‚¹ */
+    			CollectionNode cNode = new CollectionNode();
+    			cNode.setSensorName(dataXmlName);
+    			cNode.addPicNodes(picNames, picTimestamps);
+    			_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
 
-				
-				//------------Á¬ÅÄ
-				long interval=(long) (Float.parseFloat(editTextInterval.getText().toString())*1000);
-				long dt=2*capNum*interval;
-				System.out.println("dt, interval: "+dt+", "+interval);
-				
-				CountDownTimer timer=new CountDownTimer(dt+100, interval) {
-					int cnt=0;
-					@Override
-					public void onTick(long millisUntilFinished) {
-						System.out.println("onTick, millisUntilFinished, cnt: "+millisUntilFinished+", "+cnt);
-						if(cnt%2==1){
-							System.out.println("cnt%2==1");
-							//TODO: ÅÄÕÕ
-							System.out.println("cnt: "+cnt);
-							
-							int picCnt=getPicCnt();
-							String picName=picNamePrefix+"_"+picCnt+picExt;
-							//------------¼ÇÂ¼ÅÄÕÕepoch Ê±¼ä
-							Double epochTime=System.currentTimeMillis()*Consts.MS2S;
-							picTimestamps.add(epochTime);
-							picNames.add(picName);
-							System.out.println("------------picName, epochTime: "+picName+", "+epochTime);
+    			/* å†™å…¥æ–°çš„collectionåˆ°xmlæ–‡ä»¶ä¸­ */
+    			try {
+    				_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
+    			} catch(Exception e) {
+    				e.printStackTrace();
+    			}
 
-							//-------------------Ğ´ÅäÖÃÎÄ¼ş
-							CollectionNode cNode=new CollectionNode();
-							cNode.setSensorName(dataXmlName);
-							cNode.addPicNodes(picNames, picTimestamps);
-							System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
-							_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
-							try {
-								_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
-							} catch (Exception e) {
-								e.printStackTrace();
-							}
+    			/**
+    			 * æ³¨å†Œäº†ä¸¤ä¸ªå›è°ƒå‡½æ•°
+    			 * MyShutterCallback    åœ¨ç…§ç‰‡é‡‡é›†ä¸‹æ¥ä¹‹åè°ƒç”¨ï¼Œç»™å‡ºæ‹ç…§å£°éŸ³
+    			 * TakePictureCallback  åœ¨å‹ç¼©å¥½çš„jpegå›¾åƒé‡‡é›†ä¸‹æ¥ä¹‹åè°ƒç”¨ï¼Œç”¨æ¥å¼‚æ­¥ä¿å­˜å›¾åƒæ•°æ®
+    			 */
+    			camera.takePicture(new MyShutterCallback(), null, null, new TakePictureCallback());
+    		}
 
-							camera.takePicture(null, 
-//							camera.takePicture(new MyShutterCallback(), 
-									null,
-									new TakePictureCallback());
-						}
-						cnt++;
-					}//onTick
-					
-					@Override
-					public void onFinish() {
-						System.out.println("onFinish--------");
-						
-						//----------------------Í£Ö¹²ÉÑù
-						//ÒÆµ½ onPause, 2013Äê12ÔÂ18ÈÕ1:40:24
-//						_listener.unregisterWithSensorManager(_sm);
-						
-						((NewSessionNode)_newSessionNode).setEndTime(System.currentTimeMillis()*Consts.MS2S);
-						_newSessionNode.addNode(_listener.getSensorData());
-						
-						//---------------------±£´æxmlÊı¾İÎÄ¼ş
-						System.out.println("_projFolder: "+_projFolder+", "+_projFolder.isDirectory());
-						int dataXmlCnt = _projFolder.list(new FilenameFilter() {
-							@Override
-							public boolean accept(File dir, String filename) {
-								return filename.contains(dataXmlPrefix)
-										&& filename.endsWith(dataXmlExt);
-							}
-						}).length;
-						dataXmlName=dataXmlPrefix+"_"+dataXmlCnt+dataXmlExt;
-						_dataXmlFile=new File(_projFolder, dataXmlName);
-						
+    		cnt++;
+    	}//onTick
 
-						
-						WriteXmlTask task=new WriteXmlTask(){
+    	@Override
+    	public void onFinish() {
+    		/* ç»“æŸsensoræ•°æ®é‡‡é›† */
+    		_newSessionNode.setEndTime(System.currentTimeMillis() * Consts.MS2S);
+    		_newSessionNode.addNode(_listener.getSensorData());
 
-							@Override
-							protected void onPostExecute(Void result) {
-								super.onPostExecute(result);
-								
-//								//zip Ñ¹ËõÕû¸öÎÄ¼ş¼Ğ
-//								String zipName=_projFolder.getName()+".zip";
-//								try {
-//									File zipFile=new File(_projFolder.getParent(), zipName);
-//									if(zipFile.exists())
-//										zipFile.delete();
-//									ZipUtility.zipDirectory(_projFolder, zipFile);
-//								} catch (IOException e) {
-//									// TODO Auto-generated catch block
-//									e.printStackTrace();
-//								}
-								
-								saveXmlFinished=true;
-//								if(shouldEnableBtn()){
-//									buttonCapture.setEnabled(true);
-//									saveXmlFinished=false;
-//									savePicFinished=false;
-//								}
-								enableCaptureButton();
-							}//onPostExecute
-							
-						};
-						task.setXmlRootNode(_newSessionNode)
-						.setFile(_dataXmlFile)
-						.setPersister(_persister)
-						.execute();
-						
-						//ÒÆµ½ takepic..callback
-//						//-------------------Ğ´ÅäÖÃÎÄ¼ş
-//						CollectionNode cNode=new CollectionNode();
-//						cNode.setSensorName(dataXmlName);
-//						cNode.addPicNodes(picNames, picTimestamps);
-//						System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
-//						_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
-//						try {
-//							_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
-//						} catch (Exception e) {
-//							e.printStackTrace();
-//						}
+    		_dataXmlFile = new File(_projFolder, dataXmlName);
 
-						
-					}
-				};
-				timer.start();
-				
-			}//onClick
-		});
-		
-		
-	}//respondEvents
+    		WriteXmlTask task = new WriteXmlTask() {
+    			@Override
+    			protected void onPostExecute(Void result) {
+    				super.onPostExecute(result);
+    				saveXmlFinished = true;
+    				enableCaptureButton();
+    			}//onPostExecute
+    		};
 
-	
-	@Override
-	protected void onResume() {
-		super.onResume();
-	
-		_listener.reset();
-		_listener.registerWithSensorManager(_sm, Consts.aMillion/30);
+    		/* å¼‚æ­¥å†™å…¥ä¼ æ„Ÿå™¨æ•°æ® */
+    		task.setXmlRootNode(_newSessionNode)
+    		.setFile(_dataXmlFile)
+    		.setPersister(_persister)
+    		.execute();
+    	} // onFinish
+    }
 
-	}//onResume
+    /**
+     * æ‹æ‘„æŒ‰é’®æŒ‰ä¸‹çš„ç›¸åº”å®ç°
+     */
+    private void capture_btn_event_impl() {
+    
+        buttonCapture.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+            	prepare_project_config_xml_node();
 
-	@Override
-	protected void onPause() {
-		super.onPause();
-		
-		_listener.unregisterWithSensorManager(_sm);
-	}//onPause
-	
-//	boolean shouldEnableBtn(){
-//		if(savePicFinished&&saveXmlFinished){
-//			return true;
-//		}
-//		return false;
-//	}
-	void enableCaptureButton(){
-		if(savePicFinished&&saveXmlFinished){
-			buttonCapture.setEnabled(true);
-			savePicFinished=false;
-			saveXmlFinished=false;
-		}
-	}//enableCaptureButton
+                buttonCapture.setEnabled(false);
 
-	@Override
-	public void onCreate(Bundle savedInstanceState) {
-		super.onCreate(savedInstanceState);
-		/*
-		 * ÉèÖÃ´°¿ÚÊôĞÔ£ºÒ»¶¨ÒªÔÚ setContentView(R.layout.main) Ö®Ç°
-		 */
-		// ´°¿Ú±êÌâ,ÆäÊµ¿ÉÒÔÔÚmanifesÎÄ¼şÀïÃæ×¢²á
-		// requestWindowFeature(Window.FEATURE_NO_TITLE);
-		// È«ÆÁ
-		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-				WindowManager.LayoutParams.FLAG_FULLSCREEN);
-		setContentView(R.layout.activity_main);
-		_sm=(SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
+                /* å»æ‰ç›®å‰é‡‡é›†çš„æ•°æ®ï¼Œä¹Ÿå°±æ„å‘³ç€ä»ç‚¹å‡»äº†buttonä¹‹åçš„æ•°æ®æ‰è¢«ä¿å­˜
+                 * ä½¿ç”¨è¿™ç§æ–¹å¼çš„åŸå› æ˜¯æé«˜é‡‡é›†æ•°æ®çš„ç¨³å®šæ€§ï¼Œç¼ºç‚¹æ˜¯ä¼šè€—ç”µä¸€äº›
+                 */
+                _listener.clearAllBuf();
+                
+                /* ä¼ æ„Ÿå™¨æ•°æ®å¼€å§‹é‡‡é›†æ—¶ */
+                _newSessionNode.setBeginTime(System.currentTimeMillis() * Consts.MS2S);
+                System.out.println("setBeginTime: " + System.currentTimeMillis() * Consts.MS2S);
+                
+                /* ä¼ æ„Ÿå™¨é‡‡é›†å’Œç…§ç‰‡é‡‡é›†å¼€å§‹æ—¶é—´çš„é—´éš”ï¼Œå•ä½ms */
+                long delay_time = 500;
+                
+                /* å¯åŠ¨é‡‡é›†ä»»åŠ¡ */
+                new capture_sensor_and_picture_t(delay_time).start();
 
-		initWidgets();
-		respondEvents();
-		
-		SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surfaceView);
-		// surfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-		surfaceView.getHolder().setFixedSize(200, 200);
-		surfaceView.getHolder().addCallback(new SurfaceViewCallback());
-
-		_dataFolder=Environment.getExternalStoragePublicDirectory(_dataFolderName);
-		if(!_dataFolder.exists())
-			_dataFolder.mkdirs();
-		
-		//ÒÆµ½ buttonCapture onClick:
-//		_projFolder =new File(_dataFolder, editTextProjName.getText().toString());
-//		
-//		System.out.println("!_projFolder.exists(): "+!_projFolder.exists());
-//		if(!_projFolder.exists()){
-//			System.out.println("!_projFolder.exists()");
-//			_projFolder.mkdirs();
-//		}
-//		
-//		try {
-//			File configFile=new File(_projFolder, projXmlName);
-//			if(configFile.exists())
-//				_projConfigXmlNode=_persister.read(CollectionProjXml.class, configFile);
-//		} catch (Exception e) {
-//			e.printStackTrace();
-//		}
-
-	}// onCreate
-
-	private final class SurfaceViewCallback implements Callback {
-		/**
-		 * surfaceView ±»´´½¨³É¹¦ºóµ÷ÓÃ´Ë·½·¨
-		 */
-		@Override
-		public void surfaceCreated(SurfaceHolder holder) {
-			Log.d(TAG, "surfaceCreated");
-			// ÔÚSurfaceView´´½¨ºÃÖ®ºó ´ò¿ªÉãÏñÍ· ×¢ÒâÊÇ android.hardware.Camera
-			camera = Camera.open();
-			camera.setDisplayOrientation(90);
-
-			/*
-			 * This method must be called before startPreview(). otherwise
-			 * surfaceviewÃ»ÓĞÍ¼Ïñ
-			 */
-			try {
-				camera.setPreviewDisplay(holder);
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-
-			Camera.Parameters parameters = camera.getParameters();
-			/* ÉèÖÃÔ¤ÀÀÕÕÆ¬µÄ´óĞ¡£¬´Ë´¦ÉèÖÃÎªÈ«ÆÁ */
-			// WindowManager wm = (WindowManager)
-			// getSystemService(Context.WINDOW_SERVICE); // »ñÈ¡µ±Ç°ÆÁÄ»¹ÜÀíÆ÷¶ÔÏó
-			// Display display = wm.getDefaultDisplay(); // »ñÈ¡ÆÁÄ»ĞÅÏ¢µÄÃèÊöÀà
-			// parameters.setPreviewSize(display.getWidth(),
-			// display.getHeight()); // ÉèÖÃ
-
-			// parameters.setPreviewSize(200, 200);
-
-			/* Ã¿Ãë´ÓÉãÏñÍ·²¶»ñ5Ö¡»­Ãæ£¬ */
-			parameters.setPreviewFrameRate(2);
-			/* ÉèÖÃÕÕÆ¬µÄÊä³ö¸ñÊ½:jpg */
-			// parameters.setPictureFormat(PixelFormat.JPEG);
-			parameters.setPictureFormat(ImageFormat.RGB_565);
-			/* ÕÕÆ¬ÖÊÁ¿ */
-			parameters.set("jpeg-quality", 85);
-			/* ÉèÖÃÕÕÆ¬µÄ´óĞ¡£º´Ë´¦ÕÕÆ¬´óĞ¡µÈÓÚÆÁÄ»´óĞ¡ */
-			// parameters.setPictureSize(display.getWidth(),
-			// display.getHeight());
-			parameters.setPictureSize(200, 200);
-
-			List<String> focusModes = parameters.getSupportedFocusModes();
-			if (focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
-				parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
-			}
-			/* ½«²ÎÊı¶ÔÏó¸³Óèµ½ camera ¶ÔÏóÉÏ */
-			// camera.setParameters(parameters);
-			mSeekBar.setMax(100);
-			camera.startPreview();
-
-			camera.autoFocus(new AutoFocusCallback() {
-
-				@Override
-				public void onAutoFocus(boolean success, Camera camera) {
-				}
-			});
-
-			/**
-			 * Installs a callback to be invoked for every preview frame in
-			 * addition to displaying them on the screen. The callback will be
-			 * repeatedly called for as long as preview is active. This method
-			 * can be called at any time, even while preview is live. Any other
-			 * preview callbacks are overridden. a callback object that receives
-			 * a copy of each preview frame, or null to stop receiving
-			 */
-			camera.setPreviewCallback(new Camera.PreviewCallback() {
-
-				@Override
-				public void onPreviewFrame(byte[] data, Camera camera) {
-					// TODO Auto-generated method stub
-					// ÔÚÊÓÆµÁÄÌìÖĞ£¬ÕâÀï´«ËÍ±¾µØframeÊı¾İ¸øremote¶Ë
-					// Log.d(TAG, "camera:" + camera);
-					// Log.d(TAG, "byte:" + data);
-				}
-
-			});
-			preview = true;
-		}//surfaceCreated
-
-		@Override
-		public void surfaceChanged(SurfaceHolder holder, int format, int width,
-				int height) {
-			Log.d(TAG, "surfaceChanged");
-		}
-
-		/**
-		 * SurfaceView ±»Ïú»ÙÊ±ÊÍ·Åµô ÉãÏñÍ·
-		 */
-		@Override
-		public void surfaceDestroyed(SurfaceHolder holder) {
-			if (camera != null) {
-				/* ÈôÉãÏñÍ·ÕıÔÚ¹¤×÷£¬ÏÈÍ£Ö¹Ëü */
-				if (preview) {
-					camera.stopPreview();
-					preview = false;
-				}
-				// Èç¹û×¢²áÁË´Ë»Øµ÷£¬ÔÚreleaseÖ®Ç°µ÷ÓÃ£¬·ñÔòreleaseÖ®ºó»¹»Øµ÷£¬crash
-				camera.setPreviewCallback(null);
-				camera.release();
-			}
-		}
-
-	}
-	
-	int getPicCnt(){
-//			String projFolderName=_dataFolderName+File.separator+editTextProjName.getText().toString();
-//			File projFolder = Environment.getExternalStoragePublicDirectory(projFolderName);
-//		File projFolder =new File(_dataFolder, editTextProjName.getText().toString());
-		System.out.println("in getPicCnt(), _projFolder: "+_projFolder+", "+_projFolder.isDirectory());
-		int picCnt=_projFolder.list(new FilenameFilter() {
-
-			@Override
-			public boolean accept(File dir, String filename) {
-				return filename.contains(picNamePrefix)&&filename.endsWith(picExt);
-			}
-		}).length;
-
-		return picCnt;
-	}
-	
-	private final class MyShutterCallback implements ShutterCallback{
-
-		@Override
-		public void onShutter() {
-			// TODO Auto-generated method stub
-//			int picCnt=getPicCnt();
-//			String picName=picNamePrefix+"_"+picCnt+picExt;
-//			//------------¼ÇÂ¼ÅÄÕÕepoch Ê±¼ä
-//			Double epochTime=System.currentTimeMillis()*Consts.MS2S;
-//			picTimestamps.add(epochTime);
-//			picNames.add(picName);
-//			System.out.println("------------picName, epochTime: "+picName+", "+epochTime);
-//
-//			//-------------------Ğ´ÅäÖÃÎÄ¼ş
-//			CollectionNode cNode=new CollectionNode();
-//			cNode.setSensorName(dataXmlName);
-//			cNode.addPicNodes(picNames, picTimestamps);
-//			System.out.println("-----------_projConfigXmlNode: "+_projConfigXmlNode+", "+picNames+", "+picTimestamps);
-//			_projConfigXmlNode.getCollectionsNode().collectionList.add(cNode);
-//			try {
-//				_persister.write(_projConfigXmlNode, new File(_projFolder, projXmlName));
-//			} catch (Exception e) {
-//				e.printStackTrace();
-//			}
-
-		}
-		
-	}//MyShutterCallback
-
-	/**
-	 * ´¦ÀíÕÕÆ¬±»ÅÄÉãÖ®ºóµÄÊÂ¼ş
-	 */
-	private final class TakePictureCallback implements PictureCallback {
-		@Override
-		public void onPictureTaken(byte[] data, Camera camera) {
-			System.out.println("onPictureTaken~~~~~~~~~~~~~~~~~~~~~~~~");
-			//--------±£´æÕÕÆ¬
-			int picCnt=getPicCnt();
-			
-			String picName=picNamePrefix+"_"+picCnt+picExt;
-			File picFile=new File(_projFolder, picName);
-			System.out.println("picFile: "+picFile.getAbsolutePath());
-			
-			FileOutputStream fout;
-			try {
-				fout = new FileOutputStream(picFile);
-//				fout.write(data);
-//				fout.close();
-				//--------------------------Òì²½´æÕÕÆ¬
-				WriteFoutTask foutTask=new WriteFoutTask(){
-
-					@Override
-					protected void onPostExecute(Void result) {
-						super.onPostExecute(result);
-						
-						savePicFinished=true;
-//						if(shouldEnableBtn()){
-//							buttonCapture.setEnabled(true);
-//							savePicFinished=false;
-//							saveXmlFinished=false;
-//						}
-						enableCaptureButton();
-					}
-					
-				};
-				foutTask.setFout(fout)
-				.setData(data)
-				.execute();				
-			} catch (FileNotFoundException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-			camera.startPreview();
-			
-		}//onPictureTaken
-	}
+            }//onClick
+        });
+    }
+    
+    /**
+     * è®¾ç½®æ¶ˆæ¯å“åº”çš„æ–¹æ³•
+     */
+    private void respondEvents() {
+        seekbar_event_impl();
+        capture_btn_event_impl();
+    }//respondEvents
+   
+    /**
+     * æ‹ç…§btnæ˜¯å¦å¯ä»¥æ˜¾ç¤ºçš„é€»è¾‘
+     */
+    void enableCaptureButton() {
+        if(savePicFinished && saveXmlFinished) {
+            buttonCapture.setEnabled(true);
+            savePicFinished = false;
+            saveXmlFinished = false;
+        }
+    }//enableCaptureButton
+    
+    
+    private final class SurfaceViewCallback implements Callback {
+        /**
+         * surfaceView è¢«åˆ›å»ºæˆåŠŸåè°ƒç”¨æ­¤æ–¹æ³•
+         */
+        @Override
+        public void surfaceCreated(SurfaceHolder holder) {
+            Log.d(TAG, "surfaceCreated");
+            // åœ¨SurfaceViewåˆ›å»ºå¥½ä¹‹å æ‰“å¼€æ‘„åƒå¤´ æ³¨æ„æ˜¯ android.hardware.Camera
+            camera = Camera.open();
+            camera.setDisplayOrientation(90);
+            
+            /*
+             * This method must be called before startPreview(). otherwise
+             * surfaceviewæ²¡æœ‰å›¾åƒ
+             */
+            try {
+                camera.setPreviewDisplay(holder);
+            } catch(IOException e) {
+                e.printStackTrace();
+            }
+            
+            Camera.Parameters parameters = camera.getParameters();
+            
+            /* æ¯ç§’ä»æ‘„åƒå¤´æ•è·5å¸§ç”»é¢ï¼Œ */
+            parameters.setPreviewFrameRate(2);
+            
+            /* è®¾ç½®ç…§ç‰‡çš„è¾“å‡ºæ ¼å¼:jpg */
+            parameters.setPictureFormat(PixelFormat.JPEG);
+            
+            /* ç…§ç‰‡è´¨é‡ */
+            parameters.set("jpeg-quality", 100);
+            
+            /* è®¾ç½®ç…§ç‰‡å¤§å°ä¸ºæœ€æ¥è¿‘ 1920*1080 */
+            List<Size> sizes = parameters.getSupportedPictureSizes();
+            int min_size = 1000000;
+            int index = 0;
+            if(sizes != null) {
+                for(int i = 0; i < sizes.size(); i++) {
+                    Size size = sizes.get(i);
+                    if(Math.abs(size.width - 1920) < min_size) {
+                        min_size = Math.abs(size.width - 1920);
+                        index = i;
+                    }
+                }
+            }
+            parameters.setPictureSize(sizes.get(index).width, sizes.get(index).height);
+            
+            /* è®¾ç½®å½“å‰seekbarçš„æœ€å¤§å¤§å° */
+            if(parameters.isZoomSupported()) {
+                mSeekBar.setMax(parameters.getMaxZoom());
+            }
+            
+            /* ä½¿ç”¨å®šç„¦æ¨¡å¼ */
+            parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_INFINITY);
+            
+            /* å°†å‚æ•°å¯¹è±¡èµ‹äºˆåˆ° camera å¯¹è±¡ä¸Š */
+            camera.setParameters(parameters);
+            
+            /* å¼€å§‹æ•è·æ•°æ® */
+            camera.startPreview();
+            
+            /**
+             * Installs a callback to be invoked for every preview frame in
+             * addition to displaying them on the screen. The callback will be
+             * repeatedly called for as long as preview is active. This method
+             * can be called at any time, even while preview is live. Any other
+             * preview callbacks are overridden. a callback object that receives
+             * a copy of each preview frame, or null to stop receiving
+             */
+            camera.setPreviewCallback(new Camera.PreviewCallback() {
+            
+                @Override
+                public void onPreviewFrame(byte[] data, Camera camera) {
+                    // TODO Auto-generated method stub
+                    // åœ¨è§†é¢‘èŠå¤©ä¸­ï¼Œè¿™é‡Œä¼ é€æœ¬åœ°frameæ•°æ®ç»™remoteç«¯
+                    // Log.d(TAG, "camera:" + camera);
+                    // Log.d(TAG, "byte:" + data);
+                }
+                
+            });
+            
+            preview = true;
+        }//surfaceCreated
+        
+        @Override
+        public void surfaceChanged(SurfaceHolder holder, int format, int width,
+                                   int height) {
+            Log.d(TAG, "surfaceChanged");
+        }
+        
+        /**
+         * SurfaceView è¢«é”€æ¯æ—¶é‡Šæ”¾æ‰ æ‘„åƒå¤´
+         */
+        @Override
+        public void surfaceDestroyed(SurfaceHolder holder) {
+            if(camera != null) {
+                /* è‹¥æ‘„åƒå¤´æ­£åœ¨å·¥ä½œï¼Œå…ˆåœæ­¢å®ƒ */
+                if(preview) {
+                    camera.stopPreview();
+                    preview = false;
+                }
+                
+                // å¦‚æœæ³¨å†Œäº†æ­¤å›è°ƒï¼Œåœ¨releaseä¹‹å‰è°ƒç”¨ï¼Œå¦åˆ™releaseä¹‹åè¿˜å›è°ƒï¼Œcrash
+                camera.setPreviewCallback(null);
+                camera.release();
+            }
+        }
+        
+    }
+    
+    /**
+     * è¿”å›å½“å‰è¿‡ç¨‹ç›®å½•ä¸­å›¾ç‰‡çš„æ•°ç›®
+     */
+    int getPicCnt() {
+        return _projFolder.list(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String filename) {
+                return filename.contains(picNamePrefix) && filename.endsWith(picExt);
+            }
+        }).length;
+    }
+    
+    /**
+     * æ‹æ‘„ç…§ç‰‡shutteræ—¶å€™çš„å›è°ƒå‡½æ•°
+     */
+    private class MyShutterCallback implements ShutterCallback {
+        private ToneGenerator tone;
+        
+        @Override
+        public void onShutter() {
+            /* æ‹ç…§å£°éŸ³ */
+            if(tone == null)
+                tone = new ToneGenerator(AudioManager.STREAM_MUSIC, ToneGenerator.MAX_VOLUME);
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2);
+        }
+    };
+    
+    /**
+     * å¤„ç†ç…§ç‰‡è¢«æ‹æ‘„ä¹‹åçš„äº‹ä»¶
+     */
+    private final class TakePictureCallback implements PictureCallback {
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            /* è®¾ç½®å­˜å‚¨ç…§ç‰‡æ–‡ä»¶ */
+            String picName = picNamePrefix + "_" + getPicCnt() + picExt;
+            File picFile = new File(_projFolder, picName);
+            
+            FileOutputStream fout;
+            try {
+                fout = new FileOutputStream(picFile);
+                
+                //--------------------------å¼‚æ­¥å­˜ç…§ç‰‡
+                WriteFoutTask foutTask = new WriteFoutTask() {
+                    @Override
+                    protected void onPostExecute(Void result) {
+                        super.onPostExecute(result);
+                        savePicFinished = true;
+                        enableCaptureButton();
+                    }
+                };
+                
+                foutTask.setFout(fout)
+                .setData(data)
+                .execute();
+                
+            } catch(FileNotFoundException e) {
+                e.printStackTrace();
+            } catch(IOException e) {
+                e.printStackTrace();
+            }
+            
+            camera.startPreview();
+        }//onPictureTaken
+    }
 }// CameraVideo
 
-
-class JpegPictureCallback implements PictureCallback {
-	@Override
-	public void onPictureTaken(byte[] data, Camera camera) {
-		String fname = "shit.jpg";
-		File path = Environment.getExternalStorageDirectory();
-		File file = new File(path, fname);
-		FileOutputStream fout;
-		try {
-			fout = new FileOutputStream(file);
-			fout.write(data);
-			// Bitmap bm=BitmapFactory.decodeByteArray(data, 0, data.length);
-			// Matrix mat=new Matrix();
-			// mat.setRotate(90);
-			// bm=Bitmap.createBitmap(bm, 0, 0, bm.getWidth(), bm.getHeight(),
-			// mat, true);
-			// bm.compress(Bitmap.CompressFormat.JPEG, 50, fout);
-			fout.close();
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		camera.startPreview();
-	}
-}// JpegPictureCallback
-
-//·Ç UI Ïß³ÌĞ´ÎÄ¼ş£º
+/**
+ * å¼‚æ­¥å†™xmlæ–‡ä»¶
+ */
 class WriteXmlTask extends AsyncTask<Void, Void, Void> {
-	XmlRootNode _xmlRootNode;
-	File _file;
-	Persister _persister;
-	
-	public WriteXmlTask() {
-	}
-	
-	public WriteXmlTask setXmlRootNode(XmlRootNode rootNode){
-		_xmlRootNode=rootNode;
-		return this;
-	}
-	
-	public WriteXmlTask setFile(File file){
-		_file=file;
-		return this;
-	}
-	
-	public WriteXmlTask setPersister(Persister persister){
-		_persister=persister;
-		return this;
-	}
-	
-	@Override
-	protected Void doInBackground(Void... params) {
-		System.out.println("doInBackground()");
-		if (_xmlRootNode == null || _file == null
-				|| _persister == null) {
-			System.out
-					.println("_xmlRootNode==null || _file==null || _persister == null");
-			return null;
-		}
-
-		try {
-//			_persister.write(_captureSessionNode, _file);
-			_persister.write(_xmlRootNode, _file);
-			
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return null;
-	}
-
-	@Override
-	protected void onPostExecute(Void result) {
-		System.out.println("onPostExecute");
-		super.onPostExecute(result);
-
-//		_captureSessionNode.clearAllNodes();
-		_xmlRootNode.clear();
-
-	}
-
+    XmlRootNode _xmlRootNode;
+    File _file;
+    Persister _persister;
+    
+    public WriteXmlTask() {
+    }
+    
+    public WriteXmlTask setXmlRootNode(XmlRootNode rootNode) {
+        _xmlRootNode = rootNode;
+        return this;
+    }
+    
+    public WriteXmlTask setFile(File file) {
+        _file = file;
+        return this;
+    }
+    
+    public WriteXmlTask setPersister(Persister persister) {
+        _persister = persister;
+        return this;
+    }
+    
+    @Override
+    protected Void doInBackground(Void... params) {
+        System.out.println("doInBackground()");
+        if(_xmlRootNode == null || _file == null || _persister == null) {
+            System.out.println("_xmlRootNode==null || _file==null || _persister == null");
+            return null;
+        }
+        
+        try {
+            //          _persister.write(_captureSessionNode, _file);
+            _persister.write(_xmlRootNode, _file);
+            
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
+    @Override
+    protected void onPostExecute(Void result) {
+        System.out.println("onPostExecute");
+        super.onPostExecute(result);
+        
+        //      _captureSessionNode.clearAllNodes();
+        _xmlRootNode.clear();
+        
+    }
+    
 }// WriteXmlTask
 
-class WriteFoutTask extends AsyncTask<Void, Void, Void>{
-	FileOutputStream fout;
-	byte[] data;
-	
-	@Override
-	protected Void doInBackground(Void... params) {
-		// TODO Auto-generated method stub
-		try {
-			fout.write(data);
-			fout.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		return null;
-	}
-	
-	public FileOutputStream getFout() {
-		return fout;
-	}
-
-	public WriteFoutTask setFout(FileOutputStream fout) {
-		this.fout = fout;
-		return this;
-	}
-
-	public byte[] getData() {
-		return data;
-	}
-
-	public WriteFoutTask setData(byte[] data) {
-		this.data = data;
-		return this;
-	}
-
-
-	
+/**
+ * å¼‚æ­¥å†™æ™®é€šæ•°æ®æ–‡ä»¶
+ */
+class WriteFoutTask extends AsyncTask<Void, Void, Void> {
+    FileOutputStream fout;
+    byte[] data;
+    
+    @Override
+    protected Void doInBackground(Void... params) {
+        try {
+            fout.write(data);
+            fout.close();
+        } catch(IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
+    public FileOutputStream getFout() {
+        return fout;
+    }
+    
+    public WriteFoutTask setFout(FileOutputStream fout) {
+        this.fout = fout;
+        return this;
+    }
+    
+    public byte[] getData() {
+        return data;
+    }
+    
+    public WriteFoutTask setData(byte[] data) {
+        this.data = data;
+        return this;
+    }
 }
