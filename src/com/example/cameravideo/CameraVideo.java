@@ -324,8 +324,10 @@ public class CameraVideo extends Activity {
                 _listener.clearAllBuf();
                 
                 /* 传感器数据开始采集时 */
-                _newSessionNode.setBeginTime(System.currentTimeMillis() * Consts.MS2S);
-                System.out.println("setBeginTime: " + System.currentTimeMillis() * Consts.MS2S);
+                double beginTime=System.currentTimeMillis() * Consts.MS2S;
+                _newSessionNode.setBeginTime(beginTime);
+                _listener.set_baseTimestamp(beginTime);
+                System.out.println("setBeginTime: " + beginTime);
                 
                 /* 传感器采集和照片采集开始时间的间隔，单位ms */
                 long delay_time = 500;
