@@ -383,7 +383,7 @@ public class CameraVideo extends Activity {
             Camera.Parameters parameters = camera.getParameters();
             
             /* 每秒从摄像头捕获5帧画面， */
-            parameters.setPreviewFrameRate(2);
+//            parameters.setPreviewFrameRate(2);
             
             /* 设置照片的输出格式:jpg */
             parameters.setPictureFormat(PixelFormat.JPEG);
@@ -404,7 +404,7 @@ public class CameraVideo extends Activity {
                     }
                 }
             }
-            parameters.setPictureSize(sizes.get(index).width, sizes.get(index).height);
+//            parameters.setPictureSize(sizes.get(index).width, sizes.get(index).height);
             
             /* 设置当前seekbar的最大大小 */
             if(parameters.isZoomSupported()) {
